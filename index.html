@@ -147,6 +147,17 @@
         
 
         let currentUser = null; // 로그인한 사용자 정보
+        
+        // [추가] 초기 로드 시 로컬 스토리지에서 사용자 정보 복원
+        const savedUserProfile = localStorage.getItem('gemini_pdf_user');
+        if (savedUserProfile) {
+            try {
+                currentUser = JSON.parse(savedUserProfile);
+            } catch (e) {
+                console.error("Failed to parse saved user profile", e);
+                localStorage.removeItem('gemini_pdf_user');
+            }
+        }
 
         // Google 로그인 성공 시 실행되는 콜백 함수
         function handleCredentialResponse(response) {
@@ -156,6 +167,9 @@
                 
                 console.log("Logged in as: " + responsePayload.name);
                 currentUser = responsePayload;
+                
+                // [추가] 로컬 스토리지에 사용자 정보 영구 저장
+                localStorage.setItem('gemini_pdf_user', JSON.stringify(currentUser));
                 
                 // UI 업데이트
                 updateLoginUI(true);
@@ -188,7 +202,7 @@
             } else {
                 if(loginBtn) loginBtn.style.display = 'block';
                 profileDiv.style.display = 'none';
-                currentUser = null;
+                // currentUser = null; // updateLoginUI(false) 호출 시 외부에서 처리하도록 주석 처리하거나 유지
             }
         }
 
@@ -198,8 +212,18 @@
             // 다음 방문 시 자동 로그인을 시도하지 않습니다. 사용자가 매번 로그인하는 불편함을 호소하므로,
             // 이 줄을 주석 처리하여 앱 세션만 초기화하고 Google의 자동 로그인 기능은 유지하도록 합니다.
             // google.accounts.id.disableAutoSelect();
+            
+            // [추가] 로컬 스토리지에 저장된 정보 삭제
+            localStorage.removeItem('gemini_pdf_user');
+            currentUser = null;
+            
             updateLoginUI(false);
             location.reload(); 
+        }
+        
+        // [추가] 페이지 로드 직후 저장된 로그인 정보가 있다면 UI 즉시 반영
+        if (currentUser) {
+            updateLoginUI(true);
         }
 
         let pdfDoc = null;
