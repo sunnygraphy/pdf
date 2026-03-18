@@ -286,11 +286,19 @@
                 const wrapper = document.getElementById('pdf-wrapper');
                 const availableWidth = wrapper.clientWidth; 
                 const unscaledViewport = page.getViewport({ scale: 1 });
-                const scale = availableWidth / unscaledViewport.width;
+                // 화면 너비에 맞춘 기본 스케일
+                const displayScale = availableWidth / unscaledViewport.width;
 
-                var viewport = page.getViewport({scale: scale});
+                // 고해상도(HiDPI) 디스플레이 대응: 픽셀 비율만큼 캔버스를 크게 그림
+                const outputScale = window.devicePixelRatio || 1;
+
+                const viewport = page.getViewport({scale: displayScale * outputScale});
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
+
+                // CSS 스타일은 원래 크기대로 유지 (고해상도 이미지를 압축해서 선명하게 표현)
+                canvas.style.width = `${Math.floor(viewport.width / outputScale)}px`;
+                canvas.style.height = `${Math.floor(viewport.height / outputScale)}px`;
 
                 var renderContext = {
                     canvasContext: ctx,
