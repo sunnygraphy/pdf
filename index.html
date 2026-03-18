@@ -194,7 +194,10 @@
 
         // 로그아웃 처리
         function handleSignOut() {
-            google.accounts.id.disableAutoSelect();
+            // google.accounts.id.disableAutoSelect()를 호출하면 사용자가 명시적으로 로그아웃했음을 Google에 알려,
+            // 다음 방문 시 자동 로그인을 시도하지 않습니다. 사용자가 매번 로그인하는 불편함을 호소하므로,
+            // 이 줄을 주석 처리하여 앱 세션만 초기화하고 Google의 자동 로그인 기능은 유지하도록 합니다.
+            // google.accounts.id.disableAutoSelect();
             updateLoginUI(false);
             location.reload(); 
         }
