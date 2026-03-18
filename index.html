@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini PDF 번역기</title>
+    <!-- PDF.js 라이브러리 로드 (CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // PDF.js 워커 설정
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <!-- Google Sign-In 라이브러리 추가 -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        body { font-family: sans-serif; max-width: 100%; margin: 0; padding: 20px; box-sizing: border-box; line-height: 1.6; }
+        .container { margin-top: 20px; }
+        .page-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .page-header { font-weight: bold; margin-bottom: 10px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+        .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .original-text, .translated-text { background: #f9f9f9; padding: 10px; border-radius: 4px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .translated-text { background: #e8f5e9; }
+        button { padding: 10px 20px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #loading { display: none; color: #666; margin-top: 10px; }
+        
+        /* 뷰어 및 모달 스타일 추가 */
+        #main-container { display: flex; height: 85vh; gap: 20px; margin-top: 20px; }
+        
+        /* 왼쪽 PDF 영역 */
+        #pdf-wrapper { flex: 1; overflow: auto; background: #525659; padding: 0; border-radius: 4px; position: relative; }
+        canvas { width: 100%; display: block; border: 1px solid #000; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        
+        /* 오른쪽 번역 영역 */
+        #translation-wrapper { flex: 1; border: 1px solid #ddd; padding: 20px; border-radius: 4px; overflow-y: auto; background-color: #f8f9fa; display: flex; flex-direction: column; }
+        #translation-content { white-space: pre-wrap; line-height: 1.6; flex-grow: 1; }
+        
+        .controls { text-align: center; margin: 20px 0; display: none; gap: 10px; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1 style="margin: 0;">📄 Gemini PDF 번역기</h1>
+        
+        <!-- Google 로그인 영역 -->
+        <div>
+            <!-- 로그인 버튼 설정 (data-client_id를 본인의 것으로 변경해야 함) -->
+            <div id="g_id_onload"
+                 data-client_id="581711436482-auaqielv5ajidm7r8rffpe3iflqrvvis.apps.googleusercontent.com"
+                 data-callback="handleCredentialResponse"
+                 data-auto_prompt="false">
+            </div>
+            <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left"></div>
+            
+            <!-- 로그인 후 사용자 정보 표시 -->
+            <div id="user-profile" style="display: none; align-items: center; gap: 10px;">
+                <img id="user-picture" src="" alt="Profile" style="width: 32px; height: 32px; border-radius: 50%;">
+                <span id="user-name" style="font-weight: bold;"></span>
+                <button onclick="handleSignOut()" style="padding: 5px 10px; background-color: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">로그아웃</button>
+            </div>
+        </div>
+    </div>
+
+    <p>PDF 파일을 업로드하면 Gemini가 페이지별로 번역합니다.</p>
+
+    <div style="margin-bottom: 20px;">
+        <input type="file" id="fileInput" accept="application/pdf" />
+    </div>
+
+    <!-- PDF 컨트롤러 -->
+    <div class="controls" id="controlsArea">
+        <button id="prevBtn">이전 페이지</button>
+        <span>Page: <span id="pageNum"></span> / <span id="pageCount"></span></span>
+        <button id="nextBtn">다음 페이지</button>
+        <button id="translatePageBtn" style="background-color: #28a745;">현재 페이지 번역</button>
+    </div>
+
+    <!-- 메인 분할 화면 -->
+    <div id="main-container" style="display: none;"> <!-- 초기엔 숨김 -->
+        <div id="pdf-wrapper">
+            <canvas id="the-canvas"></canvas>
+        </div>
+        <div id="translation-wrapper">
+            <div style="position: sticky; top: 0; background-color: #f8f9fa; z-index: 10; padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <h3 style="margin: 0;">번역 내용</h3>
+                    <button id="readAloudBtn" title="번역 내용 읽어주기" style="padding: 5px 10px;">🔊 읽기</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <label for="speedControl" style="font-size: 14px;">읽기 속도:</label>
+                    <input type="range" id="speedControl" min="1" max="3" step="0.1" value="1" style="width: 150px;">
+                    <span id="speedValue" style="font-size: 14px; min-width: 30px;">1.0x</span>
+                </div>
+            </div>
+            <div id="loadingStatus" style="display: none; color: #666; margin-bottom: 10px;">번역 중...</div>
+            <div id="translation-content">여기에 번역 결과가 표시됩니다.</div>
+        </div>
+    </div>
+
+    <script>
+        
+
+        let currentUser = null; // 로그인한 사용자 정보
+
+        // Google 로그인 성공 시 실행되는 콜백 함수
+        function handleCredentialResponse(response) {
+            try {
+                // JWT 토큰 디코딩하여 사용자 정보 추출
+                const responsePayload = parseJwt(response.credential);
+                
+                console.log("Logged in as: " + responsePayload.name);
+                currentUser = responsePayload;
+                
+                // UI 업데이트
+                updateLoginUI(true);
+
+            } catch (e) {
+                console.error("Login Error", e);
+            }
+        }
+
+        // JWT 토큰 파싱 헬퍼 함수
+        function parseJwt (token) {
+            var base64Url = token.split('.')[1];
+            var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        }
+
+        // 로그인 상태에 따른 UI 변경
+        function updateLoginUI(isLoggedIn) {
+            const loginBtn = document.querySelector('.g_id_signin');
+            const profileDiv = document.getElementById('user-profile');
+            
+            if (isLoggedIn && currentUser) {
+                if(loginBtn) loginBtn.style.display = 'none';
+                profileDiv.style.display = 'flex';
+                document.getElementById('user-name').textContent = currentUser.name;
+                document.getElementById('user-picture').src = currentUser.picture;
+            } else {
+                if(loginBtn) loginBtn.style.display = 'block';
+                profileDiv.style.display = 'none';
+                currentUser = null;
+            }
+        }
+
+        // 로그아웃 처리
+        function handleSignOut() {
+            google.accounts.id.disableAutoSelect();
+            updateLoginUI(false);
+            location.reload(); 
+        }
+
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let currentFileName = ""; // 현재 파일명 저장용
+        let db = null; // IndexedDB 인스턴스
+        let lastSpokenCharIndex = 0; // 읽기 중단 위치 저장
+
+        const canvas = document.getElementById('the-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const fileInput = document.getElementById('fileInput');
+
+        // 읽기 속도 조절 관련 요소
+        const speedControl = document.getElementById('speedControl');
+        const speedValue = document.getElementById('speedValue');
+        speedControl.addEventListener('input', (e) => {
+            const speed = parseFloat(e.target.value);
+            speedValue.textContent = `${speed.toFixed(1)}x`;
+            if (currentFileName) {
+                updateSettings(currentFileName, { speed: speed });
+            }
+        });
+        
+        
+        // IndexedDB 초기화
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("PDFTranslatorDB", 1);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    // 번역 저장소 (복합 키: [파일명, 페이지])
+                    if (!db.objectStoreNames.contains("translations")) {
+                        db.createObjectStore("translations", { keyPath: ["fileName", "page"] });
+                    }
+                    // 설정 저장소 (마지막 페이지 등)
+                    if (!db.objectStoreNames.contains("settings")) {
+                        db.createObjectStore("settings", { keyPath: "fileName" });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    console.log("IndexedDB initialized");
+                    resolve(db);
+                };
+
+                request.onerror = (event) => {
+                    console.error("IndexedDB error:", event.target.error);
+                    reject(event.target.error);
+                };
+            });
+        };
+
+        // DB 초기화 실행
+        initDB();
+        
+        // 파일 선택 시 PDF 로드
+        fileInput.addEventListener('change', async (e) => {
+            if (!fileInput.files[0]) {
+                alert('PDF 파일을 선택해주세요.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            currentFileName = file.name; // 파일명 저장
+            const arrayBuffer = await file.arrayBuffer();
+
+            try {
+                pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                document.getElementById('pageCount').textContent = pdfDoc.numPages;
+                document.getElementById('controlsArea').style.display = 'flex';
+                document.getElementById('main-container').style.display = 'flex';
+                
+                // 마지막으로 보던 페이지 로드
+                const settings = await getSettings(currentFileName);
+                if (settings.lastPage && settings.lastPage <= pdfDoc.numPages) {
+                    pageNum = settings.lastPage;
+                } else {
+                    pageNum = 1;
+                }
+
+                if (settings.speed) {
+                    speedControl.value = settings.speed;
+                    speedValue.textContent = `${parseFloat(settings.speed).toFixed(1)}x`;
+                } else {
+                    speedControl.value = 1;
+                    speedValue.textContent = '1.0x';
+                }
+                
+                renderPage(pageNum);
+            } catch (err) {
+                alert('PDF 로드 중 오류 발생: ' + err.message);
+            }
+        });
+
+        // 페이지 렌더링 함수
+        async function renderPage(num) {
+            // 페이지 변경 시 진행 중인 음성 읽기 중지
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                document.getElementById('readAloudBtn').textContent = '🔊 읽기';
+                window.getSelection().removeAllRanges();
+            }
+            lastSpokenCharIndex = 0; // 페이지 변경 시 읽기 위치 초기화
+
+            pageRendering = true;
+            
+            // 페이지 가져오기
+            try {
+                const page = await pdfDoc.getPage(num);
+                
+                // 화면 너비에 맞춰 스케일 계산 (꽉 채우기)
+                const wrapper = document.getElementById('pdf-wrapper');
+                const availableWidth = wrapper.clientWidth; 
+                const unscaledViewport = page.getViewport({ scale: 1 });
+                const scale = availableWidth / unscaledViewport.width;
+
+                var viewport = page.getViewport({scale: scale});
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                var renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                var renderTask = page.render(renderContext);
+
+                // 렌더링 완료 대기
+                renderTask.promise.then(function() {
+                    pageRendering = false;
+                    if (pageNumPending !== null) {
+                        renderPage(pageNumPending);
+                        pageNumPending = null;
+                    }
+                });
+            } catch (err) {
+                console.error("Page render error:", err);
+                pageRendering = false;
+            }
+
+            // 페이지 카운터 업데이트
+            document.getElementById('pageNum').textContent = num;
+            
+            // 현재 페이지 저장
+            updateSettings(currentFileName, { lastPage: num });
+
+            // 저장된 번역이 있는지 확인하고 표시
+            const savedTranslation = await getTranslation(currentFileName, num);
+            const translationContent = document.getElementById('translation-content');
+            if (savedTranslation) {
+                translationContent.textContent = savedTranslation.text;
+            } else {
+                translationContent.textContent = "번역 버튼을 눌러 번역을 시작하세요.";
+            }
+        }
+
+        // 렌더링 큐 관리
+        function queueRenderPage(num) {
+            if (pageRendering) {
+                pageNumPending = num;
+            } else {
+                renderPage(num);
+            }
+        }
+
+        // 이전 페이지 버튼
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            if (pageNum <= 1) return;
+            pageNum--;
+            queueRenderPage(pageNum);
+        });
+
+        // 다음 페이지 버튼
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            queueRenderPage(pageNum);
+        });
+
+        // 현재 페이지 번역 버튼
+        document.getElementById('translatePageBtn').addEventListener('click', async () => {
+            if (!pdfDoc) return;
+            
+            // [선택사항] 로그인한 사용자만 번역하게 하려면 아래 주석을 해제하세요.
+            
+            console.log(currentUser.email);
+            if (!currentUser) {
+                alert("Please login first.");
+                return;
+            }
+            
+
+            const contentDiv = document.getElementById('translation-content');
+            const loadingDiv = document.getElementById('loadingStatus');
+            
+            loadingDiv.style.display = 'block';
+            contentDiv.textContent = '';
+
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const text = textContent.items.map(item => item.str).join(' ');
+
+                if (!text.trim()) {
+                    contentDiv.textContent = "페이지에 텍스트가 없습니다.";
+                    loadingDiv.style.display = 'none';
+                    return;
+                }
+
+                requestGeminiTranslation(text, async function(result) {
+                    if (result.rst === "success") {
+                        const translated = result.data;
+                        const formattedText = translated.trim().replace(/\n+/g, '\n\n');
+                        contentDiv.textContent = formattedText;
+                        
+                        // 번역 결과 DB 저장
+                        await saveTranslation(currentFileName, pageNum, formattedText);
+                    } else {
+                        contentDiv.textContent = "오류 발생: " + result.data;
+                    }
+                    loadingDiv.style.display = 'none';
+                });
+
+            } catch (err) {
+                contentDiv.textContent = "오류 발생: " + err.message;
+                loadingDiv.style.display = 'none';
+            }
+        });
+
+        // 번역 내용 읽어주기 버튼
+        const readBtn = document.getElementById('readAloudBtn');
+        readBtn.addEventListener('click', () => {
+            if (!('speechSynthesis' in window)) {
+                alert('이 브라우저는 음성 합성을 지원하지 않습니다.');
+                return;
+            }
+
+            const fullText = document.getElementById('translation-content').textContent;
+            const placeholderTexts = [
+                "여기에 번역 결과가 표시됩니다.",
+                "번역 버튼을 눌러 번역을 시작하세요.",
+                "페이지에 텍스트가 없습니다."
+            ];
+
+            // 이미 읽고 있다면 멈춤 (현재 위치는 onboundary 이벤트로 계속 업데이트됨)
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel(); // cancel()은 onend 이벤트를 트리거함
+                readBtn.textContent = '🔊 읽기';
+                window.getSelection().removeAllRanges();
+                return;
+            }
+
+            if (fullText && fullText.trim() && !placeholderTexts.includes(fullText.trim())) {
+                // 이전에 읽던 위치에서 이어서 읽을 텍스트 준비
+                const textToSpeak = fullText.substring(lastSpokenCharIndex);
+                if (!textToSpeak.trim()) { // 남은 텍스트가 없으면 처음부터 다시 시작하도록 위치 초기화
+                    lastSpokenCharIndex = 0;
+                    return; // 사용자가 다시 '읽기'를 누르도록 유도
+                }
+
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                const offset = lastSpokenCharIndex; // 현재 시작 위치(offset) 저장
+
+                utterance.lang = 'ko-KR'; // 한국어 설정
+                utterance.rate = parseFloat(speedControl.value); // 읽기 속도 설정
+                
+                // 단어 경계마다 현재 읽고 있는 글자의 절대 위치를 업데이트
+                utterance.onboundary = (event) => {
+                    lastSpokenCharIndex = offset + event.charIndex;
+                    highlightCurrentSentence(lastSpokenCharIndex, fullText);
+                };
+                
+                // 읽기가 끝나면 버튼 상태 복구 및, 자연스럽게 끝났을 경우 위치 초기화
+                utterance.onend = () => {
+                    const wasCancelled = !window.speechSynthesis.speaking;
+
+                    // cancel()로 중단된 게 아니라, 문장의 끝까지 다 읽었을 때 위치 초기화
+                    if (!wasCancelled && lastSpokenCharIndex >= fullText.length - 1) {
+                        lastSpokenCharIndex = 0;
+                    }
+                    readBtn.textContent = '🔊 읽기'; 
+                    window.getSelection().removeAllRanges();
+                };
+                
+                // 짧은 지연 후 읽기 시작 (엔진 준비 시간 확보)
+                setTimeout(() => {
+                    window.speechSynthesis.speak(utterance);
+                }, 50);
+
+                readBtn.textContent = '⏹ 멈춤';
+            }
+        });
+
+        // 현재 읽고 있는 문장 하이라이트 함수
+        function highlightCurrentSentence(index, text) {
+            const contentDiv = document.getElementById('translation-content');
+            if (!contentDiv.firstChild) return;
+
+            // 문장 시작 찾기 (이전 .!? 혹은 줄바꿈)
+            let start = 0;
+            for (let i = index - 1; i >= 0; i--) {
+                if ((/[.!?]/.test(text[i]) && /\s/.test(text[i+1] || '')) || text[i] === '\n') {
+                    start = i + 1;
+                    break;
+                }
+            }
+
+            // 문장 끝 찾기
+            let end = text.length;
+            for (let i = index; i < text.length; i++) {
+                if ((/[.!?]/.test(text[i]) && /\s/.test(text[i+1] || '')) || text[i] === '\n') {
+                    end = i + 1;
+                    break;
+                }
+            }
+
+            // 공백 제외 조정
+            while (start < end && /\s/.test(text[start])) start++;
+
+            const range = document.createRange();
+            const textNode = contentDiv.firstChild;
+            if (start < textNode.length) {
+                range.setStart(textNode, start);
+                range.setEnd(textNode, Math.min(end, textNode.length));
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+
+        // --- IndexedDB Helper Functions ---
+
+        function saveTranslation(fileName, page, text) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(["translations"], "readwrite");
+                const store = transaction.objectStore("translations");
+                store.put({ fileName, page, text });
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject(transaction.error);
+            });
+        }
+
+        function getTranslation(fileName, page) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(["translations"], "readonly");
+                const store = transaction.objectStore("translations");
+                const request = store.get([fileName, page]);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        function updateSettings(fileName, updates) {
+            if (!db) return;
+            const transaction = db.transaction(["settings"], "readwrite");
+            const store = transaction.objectStore("settings");
+            const request = store.get(fileName);
+            request.onsuccess = () => {
+                const data = request.result || { fileName: fileName };
+                Object.assign(data, updates);
+                store.put(data);
+            };
+        }
+
+        function getSettings(fileName) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(["settings"], "readonly");
+                const store = transaction.objectStore("settings");
+                const request = store.get(fileName);
+                request.onsuccess = () => resolve(request.result || {});
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        
+
+
+        function requestGeminiTranslation(textToTranslate, callback) {
+    // Apps Script 배포 URL (Deploy as Web App URL)
+    // 예: https://script.google.com/macros/s/.../exec
+    let url = "https://script.google.com/macros/s/AKfycbz1fynKz7VLSC69umQipT-CtiFyWQtPPYdSt6tF4FLCM0OcaLztHnT6AoUnXnyJuoHo7A/exec"; 
+    
+    
+    // 데이터를 payload 구조로 준비
+    const payload = {
+        "action": "callGeminiAPI",
+        "data": textToTranslate,
+        "user":currentUser.email
+    };
+
+    var http = new XMLHttpRequest();
+    http.open("POST", url, true);
+    
+    // Example에서 사용한 헤더 설정 (Apps Script는 주로 text/plain으로 받지만, 호환성을 위해 유지)
+    http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+
+    http.onreadystatechange = function() {
+         if (http.readyState == 4) {
+             if (http.responseText.indexOf("error:") != -1) {
+                console.log("Server Error:", http.responseText);
+                var info = {
+                    rst: "fail",
+                    data: "Server Error"
+                }
+                callback(info);
+             } else if (http.responseText == "") {
+                var info = {
+                    rst: "fail",
+                    data: "Empty Response"
+                }
+                callback(info);
+             } else {
+                try {
+                    var data = JSON.parse(http.responseText);
+                    // 성공적으로 파싱된 데이터를 콜백으로 전달
+                    console.log(data);
+                    callback(data);
+                } catch (err) {
+                    console.log("JSON Parse Error:", err.message);
+                    var info = {
+                        rst: "fail",
+                        data: err.message
+                    }
+                    callback(info);
+                }
+             }
+         }
+    };
+
+    // JSON 문자열로 변환하여 전송
+    http.send(JSON.stringify(payload));
+}
+
+// 사용 예시:
+// requestGeminiTranslation("Hello world", function(result) {
+//     if(result.rst === "success") {
+//         console.log("번역 결과:", result.data);
+//     }
+// });
+
+    </script>
+</body>
+</html>
