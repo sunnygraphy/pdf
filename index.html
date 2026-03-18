@@ -38,6 +38,20 @@
         #translation-content { white-space: pre-wrap; line-height: 1.6; flex-grow: 1; }
         
         .controls { text-align: center; margin: 20px 0; display: none; gap: 10px; align-items: center; justify-content: center; }
+
+        /* 주석(Annotation) 스타일 */
+        .highlight { background-color: #ffeb3b; cursor: pointer; } /* 형광펜 */
+        .note-marker { border-bottom: 2px solid #ff5722; background-color: rgba(255, 87, 34, 0.1); cursor: help; } /* 메모 */
+        
+        /* 플로팅 툴바 */
+        #annotation-toolbar {
+            position: absolute; display: none; background: #333; padding: 5px; border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 1000;
+        }
+        #annotation-toolbar button {
+            background: none; border: none; color: white; padding: 5px 10px; cursor: pointer; font-size: 14px;
+        }
+        #annotation-toolbar button:hover { background-color: #555; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -109,7 +123,15 @@
                 </div>
             </div>
             <div id="loadingStatus" style="display: none; color: #666; margin-bottom: 10px;">번역 중...</div>
-            <div id="translation-content">여기에 번역 결과가 표시됩니다.</div>
+            
+            <!-- 번역 텍스트 영역 -->
+            <div id="translation-content" contenteditable="false">여기에 번역 결과가 표시됩니다.</div>
+            
+            <!-- 주석 툴바 -->
+            <div id="annotation-toolbar">
+                <button id="btn-highlight" title="형광펜"><i class="bi bi-pencil-fill" style="color: #ffeb3b;"></i></button>
+                <button id="btn-note" title="메모 남기기"><i class="bi bi-chat-left-text-fill" style="color: #ff5722;"></i></button>
+            </div>
         </div>
     </div>
 
@@ -328,8 +350,9 @@
             // 저장된 번역이 있는지 확인하고 표시
             const savedTranslation = await getTranslation(currentFileName, num);
             const translationContent = document.getElementById('translation-content');
-            if (savedTranslation) {
-                translationContent.textContent = savedTranslation.text;
+            if (savedTranslation && savedTranslation.text) {
+                // HTML 태그(밑줄, 메모)를 포함하여 복원하기 위해 innerHTML 사용
+                translationContent.innerHTML = savedTranslation.text;
             } else {
                 translationContent.textContent = "번역 버튼을 눌러 번역을 시작하세요.";
             }
@@ -395,7 +418,8 @@
                         contentDiv.textContent = formattedText;
                         
                         // 번역 결과 DB 저장
-                        await saveTranslation(currentFileName, pageNum, formattedText);
+                        // (초기 저장은 HTML 구조가 없어도 formattedText를 innerHTML로 간주하여 저장)
+                        await saveTranslation(currentFileName, pageNum, contentDiv.innerHTML);
                     } else {
                         contentDiv.textContent = "오류 발생: " + result.data;
                     }
@@ -655,6 +679,92 @@
                 toggleViewBtn.title = "기본 화면";
                 readBtn.style.display = 'none';
                 speedArea.style.display = 'none';
+            }
+        });
+
+        // --- 주석(Annotation) 기능 구현 ---
+        
+        const contentDiv = document.getElementById('translation-content');
+        const toolbar = document.getElementById('annotation-toolbar');
+
+        // 텍스트 선택 시 툴바 표시
+        document.addEventListener('selectionchange', () => {
+            const selection = window.getSelection();
+            
+            // 선택 영역이 없거나, 번역 영역 외부의 선택이면 툴바 숨김
+            if (selection.isCollapsed || !contentDiv.contains(selection.anchorNode)) {
+                toolbar.style.display = 'none';
+                return;
+            }
+
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            
+            // 번역 영역 내에서의 상대 위치 계산 (스크롤 고려 없음, fixed/absolute에 따라 조정 필요)
+            // 여기서는 absolute 위치를 계산합니다.
+            const wrapperRect = document.getElementById('translation-wrapper').getBoundingClientRect();
+            
+            // 툴바 위치 설정 (선택 영역 바로 위)
+            toolbar.style.display = 'block';
+            toolbar.style.top = `${rect.top - wrapperRect.top + document.getElementById('translation-wrapper').scrollTop + 40}px`; // +40은 헤더 높이 보정
+            toolbar.style.left = `${rect.left - wrapperRect.left}px`;
+        });
+
+        // 형광펜 버튼 클릭
+        document.getElementById('btn-highlight').addEventListener('click', async (e) => {
+            e.preventDefault(); // 선택 영역 해제 방지
+            applyAnnotation('highlight');
+        });
+
+        // 메모 버튼 클릭
+        document.getElementById('btn-note').addEventListener('click', async (e) => {
+            e.preventDefault();
+            applyAnnotation('note');
+        });
+
+        async function applyAnnotation(type) {
+            const selection = window.getSelection();
+            if (selection.isCollapsed) return;
+
+            const range = selection.getRangeAt(0);
+            const span = document.createElement('span');
+
+            if (type === 'highlight') {
+                span.className = 'highlight';
+            } else if (type === 'note') {
+                const note = prompt("메모를 입력하세요:");
+                if (!note) return;
+                span.className = 'note-marker';
+                span.title = note; // 툴팁으로 메모 내용 표시
+                span.onclick = () => alert("메모: " + note); // 클릭 시 얼럿으로 내용 확인 (모바일 대응)
+            }
+
+            try {
+                range.surroundContents(span);
+                selection.removeAllRanges(); // 선택 해제
+                toolbar.style.display = 'none';
+
+                // 변경된 HTML 저장
+                await saveTranslation(currentFileName, pageNum, contentDiv.innerHTML);
+            } catch (e) {
+                console.error("Annotation failed", e);
+                alert("복잡한 선택 영역에는 적용할 수 없습니다. (이미 스타일이 적용된 곳 등)");
+            }
+        }
+        
+        // 메모 클릭 이벤트 위임 (동적으로 생성된 요소이므로 상위에서 처리)
+        contentDiv.addEventListener('click', (e) => {
+            if (e.target.classList.contains('note-marker')) {
+                // 이미 span.onclick을 설정했지만, 안전장치로 추가
+                // alert("메모: " + e.target.title);
+            }
+            // 형광펜 지우기 기능 (선택사항)
+            if (e.target.classList.contains('highlight')) {
+                if(confirm("하이라이트를 삭제하시겠습니까?")) {
+                    const text = document.createTextNode(e.target.innerText);
+                    e.target.parentNode.replaceChild(text, e.target);
+                    saveTranslation(currentFileName, pageNum, contentDiv.innerHTML);
+                }
             }
         });
 
