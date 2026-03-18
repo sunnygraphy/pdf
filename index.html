@@ -115,7 +115,6 @@
                         <button id="readAloudBtn" title="번역 내용 읽어주기" class="btn btn-sm btn-outline-primary">🔊 읽기</button>
                         <button id="toggleViewBtn" class="btn btn-sm btn-outline-secondary ms-1" title="전체 화면"><i id="toggleViewIcon" class="bi bi-arrows-fullscreen"></i></button>
                         <button id="penModeBtn" class="btn btn-sm btn-outline-dark ms-1" title="펜 쓰기"><i class="bi bi-pen"></i></button>
-                        <button id="eraserBtn" class="btn btn-sm btn-outline-dark ms-1" title="지우개"><i class="bi bi-eraser"></i></button>
                     </div>
                 </div>
                 <div id="speedControlArea" style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
@@ -219,7 +218,6 @@
         let lastX = 0;
         let lastY = 0;
         let isPenMode = false;
-        let currentTool = 'pen'; // 'pen' | 'eraser'
 
         const speedControl = document.getElementById('speedControl');
         const speedValue = document.getElementById('speedValue');
@@ -379,7 +377,6 @@
                 if (savedTranslation.drawingData) {
                     const img = new Image();
                     img.onload = function() {
-                        drawingCtx.globalCompositeOperation = 'source-over'; // 이미지 복원 시에는 기본 합성 모드 사용
                         drawingCtx.drawImage(img, 0, 0);
                     };
                     img.src = savedTranslation.drawingData;
@@ -632,58 +629,28 @@
 
         // 펜 모드 토글
         const penModeBtn = document.getElementById('penModeBtn');
-        const eraserBtn = document.getElementById('eraserBtn');
-
-        function updateDrawingUI() {
+        penModeBtn.addEventListener('click', () => {
+            isPenMode = !isPenMode;
             const toolbar = document.getElementById('annotation-toolbar');
-            
-            // 버튼 스타일 초기화 (기본 상태)
-            penModeBtn.className = 'btn btn-sm btn-outline-dark ms-1';
-            eraserBtn.className = 'btn btn-sm btn-outline-dark ms-1';
 
             if (isPenMode) {
+                penModeBtn.classList.add('active', 'btn-dark');
+                penModeBtn.classList.remove('btn-outline-dark');
                 drawingCanvas.style.pointerEvents = 'auto'; // 캔버스 터치 활성화
+                drawingCanvas.style.cursor = 'crosshair';
                 // 펜 모드일 때 스크롤 방지 (터치 디바이스) - 선택 사항
                 drawingCanvas.style.touchAction = 'none'; 
+
                 // 펜 모드 진입 시 텍스트 선택 해제 및 툴바 숨김 (충돌 방지)
                 window.getSelection().removeAllRanges();
                 toolbar.style.display = 'none';
-
-                // 활성 도구에 따라 스타일 및 커서 적용
-                if (currentTool === 'pen') {
-                    penModeBtn.className = 'btn btn-sm btn-dark active ms-1';
-                    drawingCanvas.style.cursor = 'crosshair';
-                } else {
-                    eraserBtn.className = 'btn btn-sm btn-dark active ms-1';
-                    drawingCanvas.style.cursor = 'cell';
-                }
             } else {
+                penModeBtn.classList.remove('active', 'btn-dark');
+                penModeBtn.classList.add('btn-outline-dark');
                 drawingCanvas.style.pointerEvents = 'none'; // 캔버스 터치 비활성화 (텍스트 선택 가능)
                 drawingCanvas.style.cursor = 'default';
                 drawingCanvas.style.touchAction = 'auto';
             }
-        }
-
-        penModeBtn.addEventListener('click', () => {
-            if (isPenMode && currentTool === 'pen') {
-                isPenMode = false;
-            } else {
-                isPenMode = true;
-                currentTool = 'pen';
-            }
-            updateDrawingUI();
-            penModeBtn.blur(); // 포커스 해제로 스타일 즉시 적용
-        });
-
-        eraserBtn.addEventListener('click', () => {
-            if (isPenMode && currentTool === 'eraser') {
-                isPenMode = false;
-            } else {
-                isPenMode = true;
-                currentTool = 'eraser';
-            }
-            updateDrawingUI();
-            eraserBtn.blur();
         });
 
         function startDrawing(e) {
@@ -712,18 +679,10 @@
             drawingCtx.beginPath();
             drawingCtx.moveTo(lastX, lastY);
             drawingCtx.lineTo(currentX, currentY);
+            drawingCtx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; // 빨간색 반투명 펜
+            drawingCtx.lineWidth = 3;
             drawingCtx.lineCap = 'round';
             drawingCtx.lineJoin = 'round';
-            
-            if (currentTool === 'pen') {
-                drawingCtx.globalCompositeOperation = 'source-over';
-                drawingCtx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; // 빨간색 반투명 펜
-                drawingCtx.lineWidth = 3;
-            } else {
-                drawingCtx.globalCompositeOperation = 'destination-out'; // 지우개 모드
-                drawingCtx.lineWidth = 20; // 지우개는 좀 더 굵게
-            }
-            
             drawingCtx.stroke();
 
             [lastX, lastY] = [currentX, currentY];
