@@ -264,6 +264,21 @@
 
         // DB 초기화 실행
         initDB();
+
+        // ResizeObserver를 사용하여 번역 내용의 크기 변경을 감지하고 캔버스 크기를 동적으로 조절합니다.
+        // 이렇게 하면 번역 텍스트가 렌더링된 후 정확한 높이를 보장할 수 있습니다.
+        if ('ResizeObserver' in window) {
+            const resizeObserver = new ResizeObserver(entries => {
+                // 콜백이 여러 번 호출될 수 있으므로, 브라우저의 다음 프레임에 맞춰 실행하여 성능을 최적화합니다.
+                window.requestAnimationFrame(() => {
+                    resizeCanvas();
+                });
+            });
+            resizeObserver.observe(document.getElementById('translation-content'));
+        } else {
+            // ResizeObserver를 지원하지 않는 구형 브라우저를 위한 대체 방안
+            window.addEventListener('resize', resizeCanvas);
+        }
         
         // 파일 선택 시 PDF 로드
         fileInput.addEventListener('change', async (e) => {
@@ -621,12 +636,26 @@
             // 텍스트 영역의 전체 높이에 맞춤 (스크롤 포함)
             const width = contentDiv.offsetWidth;
             const height = Math.max(contentDiv.offsetHeight, contentDiv.scrollHeight);
-            
-            // 캔버스 크기 변경 시 내용이 지워지므로, 필요하다면 백업 로직 필요하지만
-            // 여기서는 페이지 렌더링/텍스트 변경 시 호출되므로 초기화 목적이 강함.
+
             if (drawingCanvas.width !== width || drawingCanvas.height !== height) {
+                // 1. 현재 그림을 임시 캔버스에 백업합니다.
+                // 이렇게 하지 않으면 캔버스 크기를 조절할 때 기존 그림이 모두 사라집니다.
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = drawingCanvas.width;
+                tempCanvas.height = drawingCanvas.height;
+                if (drawingCanvas.width > 0 && drawingCanvas.height > 0) {
+                   tempCtx.drawImage(drawingCanvas, 0, 0);
+                }
+
+                // 2. 메인 드로잉 캔버스의 크기를 조절합니다.
                 drawingCanvas.width = width;
                 drawingCanvas.height = height;
+
+                // 3. 백업해둔 그림을 다시 그립니다.
+                if (tempCanvas.width > 0 && tempCanvas.height > 0) {
+                    drawingCtx.drawImage(tempCanvas, 0, 0);
+                }
             }
         }
 
