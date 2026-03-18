@@ -42,8 +42,8 @@
 </head>
 <body>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h1 style="margin: 0;">📄 Gemini PDF 번역기</h1>
+    <div id="app-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0;">📄 Gemini PDF 번역기</h3>
         
         <!-- Google 로그인 영역 -->
         <div>
@@ -64,27 +64,28 @@
         </div>
     </div>
 
-    <p>PDF 파일을 업로드하면 Gemini가 페이지별로 번역합니다.</p>
+    
 
-    <div style="margin-bottom: 20px;">
-        <input type="file" id="fileInput" accept="application/pdf" />
-    </div>
+    <!-- 파일 선택 및 컨트롤 패널 통합 -->
+    <div id="top-controls" class="d-flex flex-wrap align-items-center gap-3 mb-4 p-3 bg-light rounded border shadow-sm" style="font-size: 0.7rem;">
+        <input type="file" id="fileInput" accept="application/pdf" class="form-control form-control-sm w-auto" style="font-size: 0.7rem;" />
 
-    <!-- PDF 컨트롤러 -->
-    <div class="controls" id="controlsArea">
-        <button id="prevBtn" class="btn btn-secondary" title="이전 페이지">
-            <i class="bi bi-chevron-left"></i>
-        </button>
-        <span class="mx-3 fw-bold">Page: <span id="pageNum"></span> / <span id="pageCount"></span></span>
-        <button id="nextBtn" class="btn btn-secondary" title="다음 페이지">
-            <i class="bi bi-chevron-right"></i>
-        </button>
-        <button id="translatePageBtn" class="btn btn-success ms-3"><i class="bi bi-translate"></i> 현재 페이지 번역</button>
-        <select id="modelSelect" class="form-select d-inline-block w-auto ms-2" style="max-width: 250px;">
-           
-            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-             <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
-        </select>
+        <!-- PDF 컨트롤러 (파일 로드 시 표시, ID 유지) -->
+        <div id="controlsArea" style="display: none; align-items: center; gap: 10px;">
+            <div class="vr mx-2"></div> <!-- 구분선 -->
+            <button id="prevBtn" class="btn btn-secondary btn-sm" title="이전 페이지" style="font-size: 0.7rem;">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="mx-2 fw-bold text-nowrap">Page: <span id="pageNum"></span> / <span id="pageCount"></span></span>
+            <button id="nextBtn" class="btn btn-secondary btn-sm" title="다음 페이지" style="font-size: 0.7rem;">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+            <button id="translatePageBtn" class="btn btn-success btn-sm ms-2 text-nowrap" style="font-size: 0.7rem;"><i class="bi bi-translate"></i> 현재 페이지 번역</button>
+            <select id="modelSelect" class="form-select form-select-sm d-inline-block w-auto ms-2" style="max-width: 250px; font-size: 0.7rem;">
+                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            </select>
+        </div>
     </div>
 
     <!-- 메인 분할 화면 -->
@@ -96,9 +97,12 @@
             <div style="position: sticky; top: 0; background-color: #f8f9fa; z-index: 10; padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <h3 style="margin: 0;">번역 내용</h3>
-                    <button id="readAloudBtn" title="번역 내용 읽어주기" class="btn btn-sm btn-outline-primary">🔊 읽기</button>
+                    <div>
+                        <button id="readAloudBtn" title="번역 내용 읽어주기" class="btn btn-sm btn-outline-primary">🔊 읽기</button>
+                        <button id="toggleViewBtn" class="btn btn-sm btn-outline-secondary ms-1" title="전체 화면"><i id="toggleViewIcon" class="bi bi-arrows-fullscreen"></i></button>
+                    </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                <div id="speedControlArea" style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                     <label for="speedControl" style="font-size: 14px;">읽기 속도:</label>
                     <input type="range" id="speedControl" min="1" max="3" step="0.1" value="1" style="width: 150px;">
                     <span id="speedValue" style="font-size: 14px; min-width: 30px;">1.0x</span>
@@ -609,6 +613,40 @@
 //         console.log("번역 결과:", result.data);
 //     }
 // });
+
+        // 전체 화면(집중 모드) 토글 기능
+        const toggleViewBtn = document.getElementById('toggleViewBtn');
+        toggleViewBtn.addEventListener('click', () => {
+            const header = document.getElementById('app-header');
+            const controls = document.getElementById('top-controls');
+            const mainContainer = document.getElementById('main-container');
+            const icon = document.getElementById('toggleViewIcon');
+            const readBtn = document.getElementById('readAloudBtn');
+            const speedArea = document.getElementById('speedControlArea');
+            
+            // 현재 숨겨져 있는지 확인 (header의 display 속성 기준)
+            const isHidden = header.style.display === 'none';
+
+            if (isHidden) {
+                // 다시 보이기 (Show)
+                header.style.display = 'flex';
+                controls.style.display = ''; // d-flex 클래스 복구
+                mainContainer.style.height = '85vh'; // 원래 높이로 복귀
+                icon.className = 'bi bi-arrows-fullscreen';
+                toggleViewBtn.title = "전체 화면";
+                readBtn.style.display = '';
+                speedArea.style.display = 'flex';
+            } else {
+                // 숨기기 (Hide)
+                header.style.display = 'none';
+                controls.style.display = 'none';
+                mainContainer.style.height = 'calc(100vh - 40px)'; // 화면 꽉 채우기 (패딩 고려)
+                icon.className = 'bi bi-fullscreen-exit';
+                toggleViewBtn.title = "기본 화면";
+                readBtn.style.display = 'none';
+                speedArea.style.display = 'none';
+            }
+        });
 
     </script>
 </body>
