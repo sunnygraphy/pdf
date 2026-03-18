@@ -638,8 +638,8 @@
             const toolbar = document.getElementById('annotation-toolbar');
             
             // 버튼 스타일 초기화 (기본 상태)
-            penModeBtn.className = 'btn btn-sm btn-outline-dark ms-1';
-            eraserBtn.className = 'btn btn-sm btn-outline-dark ms-1';
+            penModeBtn.className = 'btn btn-sm btn-outline-dark ms-1 bg-white';
+            eraserBtn.className = 'btn btn-sm btn-outline-dark ms-1 bg-white';
 
             if (isPenMode) {
                 drawingCanvas.style.pointerEvents = 'auto'; // 캔버스 터치 활성화
@@ -722,6 +722,7 @@
             } else {
                 drawingCtx.globalCompositeOperation = 'destination-out'; // 지우개 모드
                 drawingCtx.lineWidth = 20; // 지우개는 좀 더 굵게
+                drawingCtx.strokeStyle = 'rgba(0,0,0,1)'; // 완전하게 지우기 위해 불투명 설정
             }
             
             drawingCtx.stroke();
