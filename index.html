@@ -449,7 +449,7 @@
             try {
                 const page = await pdfDoc.getPage(pageNum);
                 const textContent = await page.getTextContent();
-                const text = textContent.items.map(item => item.str).join('\n');
+                const text = textContent.items.map(item => item.str).join(' ');
 
                 if (!text.trim()) {
                     contentDiv.textContent = "페이지에 텍스트가 없습니다.";
@@ -460,7 +460,7 @@
                 requestGeminiTranslation(text, async function(result) {
                     if (result.rst === "success") {
                         const translated = result.data;
-                        const formattedText = translated.trim().replace(/(\r\n|\n|\r)+/g, '\n\n');
+                        const formattedText = translated.trim();
                         contentDiv.textContent = formattedText;
                         
                         // 번역 결과 DB 저장
