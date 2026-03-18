@@ -638,7 +638,8 @@
             if (isHidden) {
                 // 다시 보이기 (Show)
                 header.style.display = 'flex';
-                controls.style.display = ''; // d-flex 클래스 복구
+                controls.classList.remove('d-none');
+                controls.classList.add('d-flex');
                 mainContainer.style.height = '85vh'; // 원래 높이로 복귀
                 icon.className = 'bi bi-arrows-fullscreen';
                 toggleViewBtn.title = "전체 화면";
@@ -647,7 +648,8 @@
             } else {
                 // 숨기기 (Hide)
                 header.style.display = 'none';
-                controls.style.display = 'none';
+                controls.classList.remove('d-flex');
+                controls.classList.add('d-none');
                 mainContainer.style.height = 'calc(100vh - 40px)'; // 화면 꽉 채우기 (패딩 고려)
                 icon.className = 'bi bi-fullscreen-exit';
                 toggleViewBtn.title = "기본 화면";
